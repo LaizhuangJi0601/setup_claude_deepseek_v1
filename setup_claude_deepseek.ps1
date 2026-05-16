@@ -1247,7 +1247,43 @@ function Invoke-Uninstall {
     Write-UninstallLog "目标安装目录：$($Script:RootDir)"
     Write-UninstallLog "卸载日志文件：$uninstallLogFile"
 
+    # 从用户 PATH 中自动检测真正的安装目录，应对卸载时忘传 -InstallDir 的情况
+    $detectedRoots = @{}
+    $userPathForDetect = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not [string]::IsNullOrWhiteSpace($userPathForDetect)) {
+        foreach ($entry in $userPathForDetect.Split(';')) {
+            if ($entry -match 'ClaudeCodeCLI') {
+                # 从 PATH 条目中提取 ClaudeCodeCLI 根目录
+                $idx = $entry.IndexOf('ClaudeCodeCLI', [StringComparison]::OrdinalIgnoreCase)
+                if ($idx -ge 0) {
+                    $potentialRoot = $entry.Substring(0, $idx + 'ClaudeCodeCLI'.Length)
+                    try {
+                        $resolvedRoot = [IO.Path]::GetFullPath($potentialRoot).TrimEnd('\')
+                        if (-not $detectedRoots.ContainsKey($resolvedRoot)) {
+                            $detectedRoots[$resolvedRoot] = $entry
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+    }
+
     if (-not (Test-Path -LiteralPath $Script:RootDir)) {
+        # 如果有检测到其他 ClaudeCodeCLI 根目录，提示用户
+        $otherRoots = @($detectedRoots.Keys | Where-Object { $_ -ne $Script:RootDir })
+        if ($otherRoots.Count -gt 0) {
+            Write-Warn "当前目标：$($Script:RootDir)（不存在）"
+            Write-Warn "但在 PATH 中检测到以下 ClaudeCodeCLI 安装目录："
+            foreach ($root in $otherRoots) {
+                Write-Warn "  → $root"
+            }
+            Write-Warn "请使用 -InstallDir 参数指定正确的安装目录后重新卸载。"
+            Write-Warn ('例如：-Uninstall -InstallDir "{0}"' -f $otherRoots[0])
+            Write-UninstallLog "检测到其他安装目录：$($otherRoots -join ', ')，但用户未指定 -InstallDir。"
+            return
+        }
+
         Write-Warn "未检测到安装目录 $($Script:RootDir)，可能已被删除或安装时使用了不同的路径。"
         Write-Warn "如果安装时指定了 -InstallDir，卸载时也需要传入相同的路径。"
         Write-UninstallLog "安装目录不存在，跳过目录删除。"
