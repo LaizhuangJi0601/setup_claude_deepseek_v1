@@ -112,6 +112,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 
 2. 备份当前 PATH 到桌面 `.txt` 文件（防止误删可恢复）
 3. 从用户 PATH 中移除所有 `ClaudeCodeCLI` 相关条目
 4. 删除整个 `ClaudeCodeCLI` 安装目录
+5. 生成卸载日志文件（位于安装目录或系统临时目录下的 `ClaudeCodeCLI_uninstall_logs\`）
 
 ## 限制与注意事项
 

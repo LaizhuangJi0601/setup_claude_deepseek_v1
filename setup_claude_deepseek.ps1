@@ -1224,22 +1224,61 @@ function Remove-UserPathEntry {
 function Invoke-Uninstall {
     Write-Info "开始清理本脚本写入的所有内容。"
 
-    # 检查是否有正在运行的 Claude Code 进程
-    $runningClaude = Get-Process -Name "claude" -ErrorAction SilentlyContinue
-    if ($runningClaude) {
-        Write-Warn "检测到 Claude Code 进程正在运行（PID：$($runningClaude.Id)），请先关闭 claude 再卸载。"
+    # 初始化卸载日志
+    $uninstallLogDir = if (Test-Path -LiteralPath $Script:RootDir) {
+        $logsDir = Join-Path $Script:RootDir "logs"
+        New-Item -ItemType Directory -Force -Path $logsDir -ErrorAction SilentlyContinue | Out-Null
+        $logsDir
+    }
+    else {
+        $tempLogDir = Join-Path ([IO.Path]::GetTempPath()) "ClaudeCodeCLI_uninstall_logs"
+        New-Item -ItemType Directory -Force -Path $tempLogDir -ErrorAction SilentlyContinue | Out-Null
+        $tempLogDir
+    }
+    $uninstallLogFile = Join-Path $uninstallLogDir ("uninstall_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".log")
+    function Write-UninstallLog {
+        param([string]$Message)
+        $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        "$ts  $Message" | Out-File -LiteralPath $uninstallLogFile -Append -Encoding UTF8
     }
 
-    $answer = Read-Host ('将删除所有 Claude Code 环境变量、PATH 条目以及 {0} 文件夹，是否继续？输入 Y 继续，其他输入退出' -f $Script:RootDir)
-    if ($answer -notmatch "^(Y|y)$") {
-        Write-Warn "已取消卸载。"
-        return
+    Write-UninstallLog "========== 卸载日志 =========="
+    Write-UninstallLog "卸载时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    Write-UninstallLog "目标安装目录：$($Script:RootDir)"
+    Write-UninstallLog "卸载日志文件：$uninstallLogFile"
+
+    if (-not (Test-Path -LiteralPath $Script:RootDir)) {
+        Write-Warn "未检测到安装目录 $($Script:RootDir)，可能已被删除或安装时使用了不同的路径。"
+        Write-Warn "如果安装时指定了 -InstallDir，卸载时也需要传入相同的路径。"
+        Write-UninstallLog "安装目录不存在，跳过目录删除。"
+        $answer = Read-Host "是否仍要继续清理环境变量和 PATH 条目？输入 Y 继续，其他输入退出"
+        if ($answer -notmatch "^(Y|y)$") {
+            Write-Warn "已取消卸载。"
+            Write-UninstallLog "用户取消卸载。"
+            return
+        }
+    }
+    else {
+        # 检查是否有正在运行的 Claude Code 进程
+        $runningClaude = Get-Process -Name "claude" -ErrorAction SilentlyContinue
+        if ($runningClaude) {
+            Write-Warn "检测到 Claude Code 进程正在运行（PID：$($runningClaude.Id)），请先关闭 claude 再卸载。"
+            Write-UninstallLog "警告：Claude Code 进程正在运行（PID：$($runningClaude.Id)）。"
+        }
+
+        $answer = Read-Host ('将删除所有 Claude Code 环境变量、PATH 条目以及 {0} 文件夹，是否继续？输入 Y 继续，其他输入退出' -f $Script:RootDir)
+        if ($answer -notmatch "^(Y|y)$") {
+            Write-Warn "已取消卸载。"
+            Write-UninstallLog "用户取消卸载。"
+            return
+        }
     }
 
     Write-Info "正在清除 DeepSeek/Claude Code 用户环境变量..."
     foreach ($name in $Script:ManagedEnvVars) {
         Remove-UserEnv -Name $name
         Write-Info "已删除 $name"
+        Write-UninstallLog "已删除环境变量：$name"
     }
 
     Write-Info ('正在从 PATH 中移除 {0} 相关条目...' -f $Script:RootDir)
@@ -1250,10 +1289,12 @@ function Invoke-Uninstall {
     $pathBackup = Join-Path $desktop "ClaudeCodeCLI_path_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
     $userPath | Out-File -LiteralPath $pathBackup -Encoding UTF8
     Write-Info "原始 PATH 已备份到: $pathBackup"
+    Write-UninstallLog "PATH 备份已保存到：$pathBackup"
 
     $rootFull = [IO.Path]::GetFullPath($Script:RootDir).TrimEnd("\")
     $parts = @(Split-PathList -Value $userPath)
     $newParts = @()
+    $removedCount = 0
     foreach ($part in $parts) {
         if ([string]::IsNullOrWhiteSpace($part)) {
             continue
@@ -1267,8 +1308,6 @@ function Invoke-Uninstall {
             }
         }
         catch {
-            # PATH 中有无法解析的条目（如 %VAR% 环境变量引用或非法路径），
-            # 跳过不处理，避免误删
             Write-Warn "PATH 中包含无法解析的条目，已跳过: $($part.Substring(0, [Math]::Min(60, $part.Length)))"
         }
         if (-not $matchesRoot) {
@@ -1276,20 +1315,41 @@ function Invoke-Uninstall {
         }
         else {
             Write-Info "已从 PATH 移除: $part"
+            Write-UninstallLog "已从 PATH 移除：$part"
+            $removedCount++
         }
     }
     if ($newParts.Count -ne $parts.Count) {
         $newPath = ($newParts -join ';')
         [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+        Write-UninstallLog "已更新用户 PATH（移除了 $removedCount 个条目）。"
+    }
+    else {
+        Write-UninstallLog "PATH 中未找到需移除的条目。"
     }
 
     if (Test-Path -LiteralPath $Script:RootDir) {
         Write-Info ('正在删除 {0} 文件夹...' -f $Script:RootDir)
-        Remove-Item -LiteralPath $Script:RootDir -Recurse -Force
-        Write-Info ('{0} 已删除。' -f $Script:RootDir)
+        Write-UninstallLog "开始删除安装目录：$($Script:RootDir)"
+        try {
+            Remove-Item -LiteralPath $Script:RootDir -Recurse -Force -ErrorAction Stop
+            Write-Info ('{0} 已删除。' -f $Script:RootDir)
+            Write-UninstallLog "安装目录已成功删除。"
+        }
+        catch {
+            Write-Warn "删除安装目录时出错：$($_.Exception.Message)"
+            Write-Warn "可能有文件正在被占用，请关闭相关程序后手动删除：$($Script:RootDir)"
+            Write-UninstallLog "删除安装目录失败：$($_.Exception.Message)"
+        }
+    }
+    else {
+        Write-Info ('未检测到安装目录 {0}，跳过目录删除。' -f $Script:RootDir)
+        Write-UninstallLog "安装目录不存在，跳过删除：$($Script:RootDir)"
     }
 
-    Write-Ok "卸载完成。请重新打开 PowerShell 使所有变更生效。"
+    Write-UninstallLog "========== 卸载结束 =========="
+    Write-Ok "卸载完成。卸载日志：$uninstallLogFile"
+    Write-Ok "请重新打开 PowerShell 使所有变更生效。"
 }
 
 function Invoke-Setup {
