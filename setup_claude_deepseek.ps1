@@ -1305,13 +1305,19 @@ function Invoke-Setup {
         Write-Log "快速模型：$($modelConfig.FastModel)"
         Write-Log "Effort：$($modelConfig.Effort)"
 
-        # 允许当前用户运行 PowerShell 脚本，否则 claude.ps1 会被拦截
-        try {
-            Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
-            Write-Ok "已设置 PowerShell 执行策略为 RemoteSigned（CurrentUser）。"
+        # 确保当前用户允许运行 PowerShell 脚本，否则 claude.ps1 会被拦截
+        $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction SilentlyContinue
+        if ($currentPolicy -eq "RemoteSigned" -or $currentPolicy -eq "Bypass" -or $currentPolicy -eq "Unrestricted") {
+            Write-Ok "PowerShell 执行策略已为 $currentPolicy（CurrentUser），无需修改。"
         }
-        catch {
-            Write-Warn "无法设置执行策略，可能需要管理员权限。Claude Code 可用 claude.cmd 启动。"
+        else {
+            try {
+                Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+                Write-Ok "已设置 PowerShell 执行策略为 RemoteSigned（CurrentUser）。"
+            }
+            catch {
+                Write-Warn "无法设置执行策略（$($_.Exception.Message.Trim())）。Claude Code 可用 claude.cmd 启动。"
+            }
         }
 
         # 确保干净的路径已写入用户级 PATH
