@@ -822,6 +822,26 @@ function Ensure-ClaudeCode {
     Write-Ok "Claude Code 已安装：$version"
 }
 
+function Get-MinGitAssetFileNameCandidates {
+    param([Parameter(Mandatory = $true)][string]$Tag)
+
+    $version = $Tag -replace '^v', ''
+    $versions = New-Object System.Collections.Generic.List[string]
+
+    $baseVersion = $version -replace '\.windows\.\d+$', ''
+    if (-not [string]::IsNullOrWhiteSpace($baseVersion)) {
+        $versions.Add($baseVersion)
+    }
+
+    if ($version -ne $baseVersion -and -not [string]::IsNullOrWhiteSpace($version)) {
+        $versions.Add($version)
+    }
+
+    $versions |
+        Select-Object -Unique |
+        ForEach-Object { "MinGit-$($_)-64-bit.zip" }
+}
+
 function Get-MinGitDownload {
     $releasePath = Join-Path $Script:DownloadsDir "git-for-windows-latest.json"
     $apiFailed = $false
@@ -870,10 +890,11 @@ function Get-MinGitDownload {
 
             $tag = $redirectUrl.Split("/") | Select-Object -Last 1
             $version = $tag -replace '^v', ''
-            $fileName = "MinGit-$version-64-bit.zip"
+            $fileName = @(Get-MinGitAssetFileNameCandidates -Tag $tag)[0]
             $downloadUrl = "https://github.com/git-for-windows/git/releases/download/$tag/$fileName"
 
             Write-Info "通过重定向解析到版本：$version"
+            Write-Info "使用 MinGit 资源名：$fileName"
             return [PSCustomObject]@{
                 FileName = $fileName
                 Uri = $downloadUrl
@@ -1208,7 +1229,6 @@ function Main {
 }
 
 Main
-
 
 
 
