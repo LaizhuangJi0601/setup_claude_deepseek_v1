@@ -10,26 +10,29 @@
 | PowerShell | 5.1 或更高版本                                 |
 | 磁盘 | 优先使用 电脑D盘，若无D盘，则在 `%USERPROFILE%`即C盘用户目录下 |
 
-## 通用执行命令
+## 首次运行命令（推荐）
 
-脚本可以放在任意目录。打开 **PowerShell**，进入脚本所在目录后执行：
+脚本可以放在任意目录。打开 **PowerShell**，进入脚本所在目录后，优先使用下面这条命令运行：
 
 ```powershell
-# 基本安装
-.\setup_claude_deepseek_v1.ps1
-
-# 使用代理安装
-.\setup_claude_deepseek_v1.ps1 -Proxy "http://127.0.0.1:7890"
-
-# 完全卸载
-.\setup_claude_deepseek_v1.ps1 -Uninstall
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek_v1.ps1
 ```
 
-> 如果提示"在此系统上禁止运行脚本"，请先以管理员身份运行：
-> ```powershell
-> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-> ```
-> 或用 `powershell -ExecutionPolicy Bypass -File .\setup_claude_deepseek_v1.ps1` 临时绕过。
+原因：从 GitHub 下载的 `.ps1` 脚本通常没有数字签名，Windows 可能会给文件加上来自 Internet 的安全标记，PowerShell 默认执行策略会拦截未签名脚本并提示“未对文件进行数字签名”。上面的命令只对本次启动的 PowerShell 进程临时绕过执行策略，不需要管理员权限，也不会永久修改系统策略。
+
+如需使用代理安装：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek_v1.ps1 -Proxy "http://127.0.0.1:7890"
+```
+
+如需完全卸载：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek_v1.ps1 -Uninstall
+```
+
+不要以管理员身份运行本脚本；脚本写入的是当前用户级环境变量，管理员窗口会把配置写到 Administrator 账户下。
 
 ## 参数说明
 
