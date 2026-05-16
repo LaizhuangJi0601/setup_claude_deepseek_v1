@@ -2,6 +2,8 @@
 
 一键在 Windows x64 上搭建 **Claude Code CLI + DeepSeek API** 环境。
 
+如果这个脚本对你有帮助，欢迎在 GitHub 右上角点一个 Star，方便后续继续维护和更新。
+
 ## 适用环境
 
 | 条件 | 要求                                        |
