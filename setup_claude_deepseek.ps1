@@ -799,8 +799,9 @@ set "PATH=$($Script:NodeDir);%PATH%"
     }
 
     if ($process.ExitCode -ne 0 -and $npmReportedOk) {
-        $exitCodeDisplay = if ($null -eq $process.ExitCode) { "无" } else { $process.ExitCode.ToString() }
-        Write-Warn "npm 进程退出码异常（$exitCodeDisplay），但安装输出表明已完成，继续。"
+        # Start-Process -NoNewWindow 在某些环境下 ExitCode 不可靠（null 或异常值），
+        # 但 npm 自身输出已确认成功，只需静默记录日志，不警告用户。
+        Write-Log "注：npm 进程退出码为 $($process.ExitCode)，但 npm 输出已确认安装成功。"
     }
 
     if (-not [string]::IsNullOrWhiteSpace($stdout)) {
