@@ -1,0 +1,33 @@
+# Local secrets and environment files
+.env
+.env.*
+*.key
+*.pem
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# PowerShell editor/runtime artifacts
+*.ps1xml
+*.pssc
+*.psrc
+
+# Archives and downloaded installers
+*.zip
+*.7z
+*.tar
+*.tar.gz
+downloads/
+
+# Node/npm artifacts if testing locally
+node_modules/
+npm-cache/
+npm-global/
+
+# OS/editor noise
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
