@@ -1224,17 +1224,9 @@ function Remove-UserPathEntry {
 function Invoke-Uninstall {
     Write-Info "开始清理本脚本写入的所有内容。"
 
-    # 初始化卸载日志
-    $uninstallLogDir = if (Test-Path -LiteralPath $Script:RootDir) {
-        $logsDir = Join-Path $Script:RootDir "logs"
-        New-Item -ItemType Directory -Force -Path $logsDir -ErrorAction SilentlyContinue | Out-Null
-        $logsDir
-    }
-    else {
-        $tempLogDir = Join-Path ([IO.Path]::GetTempPath()) "ClaudeCodeCLI_uninstall_logs"
-        New-Item -ItemType Directory -Force -Path $tempLogDir -ErrorAction SilentlyContinue | Out-Null
-        $tempLogDir
-    }
+    # 卸载日志写入系统临时目录，避免被 Remove-Item 一并删除
+    $uninstallLogDir = Join-Path ([IO.Path]::GetTempPath()) "ClaudeCodeCLI_uninstall_logs"
+    New-Item -ItemType Directory -Force -Path $uninstallLogDir -ErrorAction SilentlyContinue | Out-Null
     $uninstallLogFile = Join-Path $uninstallLogDir ("uninstall_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".log")
     function Write-UninstallLog {
         param([string]$Message)
