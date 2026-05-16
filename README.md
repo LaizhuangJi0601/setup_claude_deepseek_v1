@@ -1,4 +1,4 @@
-# setup_claude_deepseek_v1.ps1
+# setup_claude_deepseek.ps1
 
 一键在 Windows x64 上搭建 **Claude Code CLI + DeepSeek API** 环境。
 
@@ -17,7 +17,7 @@
 脚本可以放在任意目录。打开 **PowerShell**，进入脚本所在目录后，优先使用下面这条命令运行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek_v1.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1
 ```
 
 原因：从 GitHub 下载的 `.ps1` 脚本通常没有数字签名，Windows 可能会给文件加上来自 Internet 的安全标记，PowerShell 默认执行策略会拦截未签名脚本并提示“未对文件进行数字签名”。上面的命令只对本次启动的 PowerShell 进程临时绕过执行策略，不需要管理员权限，也不会永久修改系统策略。
@@ -25,13 +25,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek_v1.p
 如需使用代理安装：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek_v1.ps1 -Proxy "http://127.0.0.1:7890"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 -Proxy "http://127.0.0.1:7890"
 ```
 
 如需完全卸载：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek_v1.ps1 -Uninstall
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 -Uninstall
 ```
 
 不要以管理员身份运行本脚本；脚本写入的是当前用户级环境变量，管理员窗口会把配置写到 Administrator 账户下。
