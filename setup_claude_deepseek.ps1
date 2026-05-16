@@ -350,40 +350,69 @@ function Invoke-DirectDownload {
     param(
         [Parameter(Mandatory = $true)][string]$Uri,
         [Parameter(Mandatory = $true)][string]$OutFile,
-        [Parameter(Mandatory = $true)][string]$What
+        [Parameter(Mandatory = $true)][string]$What,
+        [int]$MaxRetries = 2
     )
 
-    try {
-        Write-Info "正在下载 $What"
-        $request = [Net.HttpWebRequest]::Create($Uri)
-        $request.UserAgent = $Script:UserAgent
-        $request.AllowAutoRedirect = $true
-        $request.Timeout = 30000
-        $request.ReadWriteTimeout = 30000
-        if (-not [string]::IsNullOrWhiteSpace($Script:Proxy)) {
-            $request.Proxy = New-Object Net.WebProxy($Script:Proxy, $true)
+    $retry = 0
+    while ($retry -le $MaxRetries) {
+        if ($retry -gt 0) {
+            Write-Warn "$What 下载失败，正在进行第 $retry 次重试..."
+            Start-Sleep -Seconds ($retry * 2)
         }
 
-        $response = $request.GetResponse()
         try {
-            Save-ResponseStreamWithProgress -Response $response -OutFile $OutFile -What $What
+            if ($retry -eq 0) {
+                Write-Info "正在下载 $What"
+            }
+            else {
+                Write-Info "正在下载 $What（重试 $retry/$MaxRetries）"
+            }
+
+            $request = [Net.HttpWebRequest]::Create($Uri)
+            $request.UserAgent = $Script:UserAgent
+            $request.AllowAutoRedirect = $true
+            $request.Timeout = 30000
+            $request.ReadWriteTimeout = 30000
+            if (-not [string]::IsNullOrWhiteSpace($Script:Proxy)) {
+                $request.Proxy = New-Object Net.WebProxy($Script:Proxy, $true)
+            }
+
+            $response = $request.GetResponse()
+            try {
+                Save-ResponseStreamWithProgress -Response $response -OutFile $OutFile -What $What
+            }
+            finally {
+                $response.Dispose()
+            }
+            return
         }
-        finally {
-            $response.Dispose()
+        catch [Net.WebException] {
+            $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { "无响应" }
+            # 非临时性错误（资源不存在/无权限），不重试直接退出
+            if ($statusCode -match "^(401|403|404|410)$") {
+                Fail "$What 下载失败（HTTP $statusCode），资源不存在或无权访问。"
+            }
+            # 临时性错误，可重试
+            if ($retry -ge $MaxRetries) {
+                $detail = "URL: $Uri`nHTTP 状态: $statusCode`n错误: $($_.Exception.Message)"
+                Write-Warn "$What 下载失败（已重试 $MaxRetries 次）：$detail"
+                Fail $Script:NetworkFailureMessage
+            }
         }
-    }
-    catch [Net.WebException] {
-        $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { "无响应" }
-        $detail = "URL: $Uri`nHTTP 状态: $statusCode`n错误: $($_.Exception.Message)"
-        Write-Warn "$What 下载失败：$detail"
-        if ($statusCode -match "^(401|403|404|410)$") {
-            Fail "$What 下载失败（HTTP $statusCode），资源不存在或无权访问。"
+        catch {
+            # 非网络错误不重试
+            if ($_.Exception.Message -notmatch "timeout|timed|connect|network|resolve|refused|unreachable|aborted") {
+                Write-Warn "$What 下载失败：URL: $Uri`n$($_.Exception.Message)"
+                Fail $Script:NetworkFailureMessage
+            }
+            if ($retry -ge $MaxRetries) {
+                Write-Warn "$What 下载失败（已重试 $MaxRetries 次）：URL: $Uri`n$($_.Exception.Message)"
+                Fail $Script:NetworkFailureMessage
+            }
         }
-        Fail $Script:NetworkFailureMessage
-    }
-    catch {
-        Write-Warn "$What 下载失败：URL: $Uri`n$($_.Exception.Message)"
-        Fail $Script:NetworkFailureMessage
+
+        $retry++
     }
 }
 
@@ -810,6 +839,11 @@ set "PATH=$($Script:NodeDir);%PATH%"
             Write-Info $line
         }
     }
+
+    # 清理临时 bat 文件
+    if (Test-Path -LiteralPath $wrapperBat) {
+        Remove-Item -LiteralPath $wrapperBat -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Ensure-ClaudeCode {
@@ -1083,19 +1117,9 @@ function Show-VersionSummary {
     if (-not $gitDir) { Fail "验证失败：未找到本地 git.exe。" }
     if (-not $claude) { Fail "验证失败：未找到本地 claude。" }
 
-    $checks = @(
-        @{ Name = "node"; Path = $nodeExe; Args = @("--version") },
-        @{ Name = "npm"; Path = $npmCmd; Args = @("--version") },
-        @{ Name = "git"; Path = (Join-Path $gitDir "git.exe"); Args = @("--version") },
-        @{ Name = "claude"; Path = $claude; Args = @("--version") }
-    )
-
+    $claudeVersion = Invoke-CheckedCommand -FilePath $claude -Arguments @("--version")
     Write-Host ""
-    Write-Host "安装验证结果："
-    foreach ($check in $checks) {
-        $version = Invoke-CheckedCommand -FilePath $check.Path -Arguments $check.Args
-        Write-Host ("  {0,-8} {1}" -f $check.Name, $version)
-    }
+    Write-Ok "基础组件验证通过（Claude Code $claudeVersion），继续配置。"
 }
 
 function Confirm-LaunchClaude {
@@ -1200,6 +1224,12 @@ function Remove-UserPathEntry {
 function Invoke-Uninstall {
     Write-Info "开始清理本脚本写入的所有内容。"
 
+    # 检查是否有正在运行的 Claude Code 进程
+    $runningClaude = Get-Process -Name "claude" -ErrorAction SilentlyContinue
+    if ($runningClaude) {
+        Write-Warn "检测到 Claude Code 进程正在运行（PID：$($runningClaude.Id)），请先关闭 claude 再卸载。"
+    }
+
     $answer = Read-Host ('将删除所有 Claude Code 环境变量、PATH 条目以及 {0} 文件夹，是否继续？输入 Y 继续，其他输入退出' -f $Script:RootDir)
     if ($answer -notmatch "^(Y|y)$") {
         Write-Warn "已取消卸载。"
@@ -1273,7 +1303,12 @@ function Invoke-Setup {
     Write-Log "========== Claude Code + DeepSeek 安装日志 =========="
     Write-Log "启动时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     Write-Log "PowerShell 版本：$($PSVersionTable.PSVersion)"
-    Write-Log "安装目录：$($Script:RootDir)"
+    if ($InstallDir) {
+        Write-Log "安装目录：$($Script:RootDir)（用户指定：$InstallDir）"
+    }
+    else {
+        Write-Log "安装目录：$($Script:RootDir)（默认）"
+    }
     if ([string]::IsNullOrWhiteSpace($Script:Proxy)) {
         Write-Log "代理：未使用"
     }
@@ -1323,6 +1358,16 @@ function Invoke-Setup {
 
         # 确保干净的路径已写入用户级 PATH
         Sync-ClaudeCodeCLIPath
+
+        # 清理 npm 代理配置，避免后续无代理环境下 npm 操作失败
+        if (-not [string]::IsNullOrWhiteSpace($Script:Proxy)) {
+            $npmCmd = Join-Path $Script:NodeDir "npm.cmd"
+            if (Test-Path -LiteralPath $npmCmd) {
+                & $npmCmd config delete proxy 2>$null
+                & $npmCmd config delete https-proxy 2>$null
+                Write-Log "已清理 npm 代理配置。"
+            }
+        }
 
         Write-Ok "DeepSeek API 已写入当前 Windows 用户级环境变量。"
         Write-Info "当前主模型：$($modelConfig.MainModel)"
