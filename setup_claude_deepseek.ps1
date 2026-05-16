@@ -1,7 +1,8 @@
 ﻿[CmdletBinding()]
 param(
     [switch]$Uninstall,
-    [string]$Proxy
+    [string]$Proxy,
+    [string]$InstallDir
 )
 
 Set-StrictMode -Version Latest
@@ -14,13 +15,27 @@ catch {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 }
 
-# 切换控制台为 UTF-8，避免中文路径/用户名和 npm 输出乱码
+# 切换控制台编码为 UTF-8，避免中文路径/用户名和 npm 输出乱码
+# 必须同时设置 OutputEncoding，否则 Write-Host 输出的中文字符会因编码不一致而重复
 try {
+    $utf8 = [System.Text.Encoding]::UTF8
+    [Console]::OutputEncoding = $utf8
+    [Console]::InputEncoding = $utf8
     $null = chcp 65001 2>$null
 }
-catch { }
+catch {
+    Write-Host "[警告] 无法设置控制台 UTF-8 编码，中文可能显示异常。" -ForegroundColor Yellow
+}
 
-if (Test-Path -LiteralPath "D:\" -PathType Container) {
+if ($InstallDir) {
+    $resolved = [IO.Path]::GetFullPath($InstallDir)
+    $parent = Split-Path -Parent $resolved
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+        Fail "指定的安装目录父路径不存在：$parent，请先确保盘符存在或检查路径拼写。"
+    }
+    $Script:RootDir = $resolved
+}
+elseif (Test-Path -LiteralPath "D:\" -PathType Container) {
     $Script:RootDir = "D:\ClaudeCodeCLI"
 }
 else {
@@ -31,9 +46,10 @@ $Script:NpmGlobalDir = Join-Path $Script:RootDir "npm-global"
 $Script:NpmCacheDir = Join-Path $Script:RootDir "npm-cache"
 $Script:GitDir = Join-Path $Script:RootDir "Git"
 $Script:DownloadsDir = Join-Path $Script:RootDir "downloads"
+$Script:LogsDir = Join-Path $Script:RootDir "logs"
 $Script:DeepSeekBaseUrl = "https://api.deepseek.com/anthropic"
 $Script:NetworkFailureMessage = "下载失败，请使用代理后重新运行本脚本。"
-$Script:UserAgent = "ClaudeCodeCLI-DeepSeek-Setup/1.0"
+$Script:UserAgent = "ClaudeCodeCLI-DeepSeek-Setup/2.0"
 $Script:NpmRegistry = "https://registry.npmjs.org/"
 $Script:Proxy = $Proxy
 
@@ -61,6 +77,12 @@ function Write-Warn {
 function Write-Ok {
     param([Parameter(Mandatory = $true)][string]$Message)
     Write-Host "[成功] $Message" -ForegroundColor Green
+}
+
+function Write-Log {
+    param([Parameter(Mandatory = $true)][string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "$timestamp  $Message" | Out-File -LiteralPath $Script:LogFile -Append -Encoding UTF8
 }
 
 function Fail {
@@ -503,6 +525,8 @@ function Ensure-Node {
         $npmVersion = Invoke-CheckedCommand -FilePath $npmCmd -Arguments @("--version")
         Write-Ok "检测到本地 Node.js：$nodeVersion"
         Write-Ok "检测到本地 npm：$npmVersion"
+        Write-Log "Node.js（检测）：$nodeVersion（路径：$nodeExe）"
+        Write-Log "npm（检测）：$npmVersion（路径：$npmCmd）"
         return
     }
 
@@ -516,6 +540,8 @@ function Ensure-Node {
     $npmVersion = Invoke-CheckedCommand -FilePath (Join-Path $Script:NodeDir "npm.cmd") -Arguments @("--version")
     Write-Ok "Node.js 已安装：$nodeVersion"
     Write-Ok "npm 已安装：$npmVersion"
+    Write-Log "Node.js（安装）：$nodeVersion"
+    Write-Log "npm（安装）：$npmVersion"
 }
 
 function Configure-Npm {
@@ -534,6 +560,9 @@ function Configure-Npm {
     }
     Add-UserPath -PathToAdd $Script:NpmGlobalDir
     Write-Ok ('npm prefix/cache 已配置到 {0}。' -f $Script:RootDir)
+    Write-Log "npm prefix：$Script:NpmGlobalDir"
+    Write-Log "npm cache：$Script:NpmCacheDir"
+    Write-Log "npm registry：$Script:NpmRegistry"
 }
 
 function Get-LocalClaudeCommand {
@@ -770,7 +799,8 @@ set "PATH=$($Script:NodeDir);%PATH%"
     }
 
     if ($process.ExitCode -ne 0 -and $npmReportedOk) {
-        Write-Warn "npm 进程退出码异常（$($process.ExitCode)），但安装输出表明已完成，继续。"
+        $exitCodeDisplay = if ($null -eq $process.ExitCode) { "无" } else { $process.ExitCode.ToString() }
+        Write-Warn "npm 进程退出码异常（$exitCodeDisplay），但安装输出表明已完成，继续。"
     }
 
     if (-not [string]::IsNullOrWhiteSpace($stdout)) {
@@ -794,6 +824,7 @@ function Ensure-ClaudeCode {
     if ($localClaude) {
         $version = Invoke-CheckedCommand -FilePath $localClaude -Arguments @("--version")
         Write-Ok "检测到本地 Claude Code：$version"
+        Write-Log "Claude Code（检测）：$version"
         return
     }
 
@@ -820,6 +851,7 @@ function Ensure-ClaudeCode {
 
     $version = Invoke-CheckedCommand -FilePath $localClaude -Arguments @("--version")
     Write-Ok "Claude Code 已安装：$version"
+    Write-Log "Claude Code（安装）：$version"
 }
 
 function Get-MinGitAssetFileNameCandidates {
@@ -935,6 +967,7 @@ function Ensure-Git {
         Add-UserPath -PathToAdd $gitDir
         $version = Invoke-CheckedCommand -FilePath (Join-Path $gitDir "git.exe") -Arguments @("--version")
         Write-Ok "检测到本地 Git：$version"
+        Write-Log "Git（检测）：$version"
         return
     }
 
@@ -951,6 +984,7 @@ function Ensure-Git {
     Add-UserPath -PathToAdd $gitDir
     $version = Invoke-CheckedCommand -FilePath (Join-Path $gitDir "git.exe") -Arguments @("--version")
     Write-Ok "Git 已安装：$version"
+    Write-Log "Git（安装）：$version"
 }
 
 function ConvertFrom-SecureStringPlainText {
@@ -1025,6 +1059,16 @@ function Set-DeepSeekEnvironment {
     Set-UserEnv -Name "ANTHROPIC_DEFAULT_HAIKU_MODEL" -Value $ModelConfig.FastModel
     Set-UserEnv -Name "CLAUDE_CODE_SUBAGENT_MODEL" -Value $ModelConfig.FastModel
     Set-UserEnv -Name "CLAUDE_CODE_EFFORT_LEVEL" -Value $ModelConfig.Effort
+
+    Write-Log "环境变量已设置："
+    Write-Log "  ANTHROPIC_BASE_URL = $Script:DeepSeekBaseUrl"
+    Write-Log "  ANTHROPIC_AUTH_TOKEN = $(Mask-Secret -Value $ApiKey)"
+    Write-Log "  ANTHROPIC_MODEL = $($ModelConfig.MainModel)"
+    Write-Log "  ANTHROPIC_DEFAULT_OPUS_MODEL = $($ModelConfig.MainModel)"
+    Write-Log "  ANTHROPIC_DEFAULT_SONNET_MODEL = $($ModelConfig.MainModel)"
+    Write-Log "  ANTHROPIC_DEFAULT_HAIKU_MODEL = $($ModelConfig.FastModel)"
+    Write-Log "  CLAUDE_CODE_SUBAGENT_MODEL = $($ModelConfig.FastModel)"
+    Write-Log "  CLAUDE_CODE_EFFORT_LEVEL = $($ModelConfig.Effort)"
 }
 
 function Show-VersionSummary {
@@ -1054,11 +1098,52 @@ function Show-VersionSummary {
 }
 
 function Confirm-LaunchClaude {
+    # 收集版本信息
+    $nodeExe = Join-Path $Script:NodeDir "node.exe"
+    $npmCmd = Join-Path $Script:NodeDir "npm.cmd"
+    $gitDir = Get-LocalGitCommandDir
+    $claude = Get-LocalClaudeCommand
+    $nodeVersion = if (Test-Path -LiteralPath $nodeExe) { Invoke-CheckedCommand -FilePath $nodeExe -Arguments @("--version") } else { "未安装" }
+    $npmVersion = if (Test-Path -LiteralPath $npmCmd) { Invoke-CheckedCommand -FilePath $npmCmd -Arguments @("--version") } else { "未安装" }
+    $gitVersion = if ($gitDir) { Invoke-CheckedCommand -FilePath (Join-Path $gitDir "git.exe") -Arguments @("--version") } else { "未安装" }
+    $claudeVersion = if ($claude) { Invoke-CheckedCommand -FilePath $claude -Arguments @("--version") } else { "未安装" }
+    $baseUrl = Get-UserEnv -Name "ANTHROPIC_BASE_URL"
+    $mainModel = Get-UserEnv -Name "ANTHROPIC_MODEL"
+    $fastModel = Get-UserEnv -Name "CLAUDE_CODE_SUBAGENT_MODEL"
+    $effort = Get-UserEnv -Name "CLAUDE_CODE_EFFORT_LEVEL"
+
+    # 输出总结
     Write-Host ""
     Write-Host "==============================================" -ForegroundColor Cyan
     Write-Host "  安装已完成！" -ForegroundColor Green
     Write-Host "==============================================" -ForegroundColor Cyan
     Write-Host ""
+    Write-Host "  安装目录：  $($Script:RootDir)"
+    Write-Host "  日志文件：  $($Script:LogFile)"
+    Write-Host "  node 版本： $nodeVersion"
+    Write-Host "  npm 版本：  $npmVersion"
+    Write-Host "  git 版本：  $gitVersion"
+    Write-Host "  claude 版本：$claudeVersion"
+    Write-Host "  API 地址：  $baseUrl"
+    Write-Host "  主模型：    $mainModel"
+    Write-Host "  快速模型：  $fastModel"
+    Write-Host "  Effort：    $effort"
+    Write-Host ""
+
+    # 写入日志
+    Write-Log "========== 安装总结 =========="
+    Write-Log "安装目录：$($Script:RootDir)"
+    Write-Log "日志文件：$($Script:LogFile)"
+    Write-Log "node 版本：$nodeVersion"
+    Write-Log "npm 版本：$npmVersion"
+    Write-Log "git 版本：$gitVersion"
+    Write-Log "claude 版本：$claudeVersion"
+    Write-Log "ANTHROPIC_BASE_URL：$baseUrl"
+    Write-Log "主模型：$mainModel"
+    Write-Log "快速模型：$fastModel"
+    Write-Log "Effort：$effort"
+    Write-Log "下一步：重新打开 PowerShell 后运行 claude"
+
     Write-Warn "环境变量在当前 PowerShell 窗口中尚未生效。"
     Write-Host ""
     Write-Host "  请执行以下其中一种操作使其生效："
@@ -1181,42 +1266,69 @@ function Invoke-Setup {
 
     Initialize-Directories
 
-    # 清理旧版本可能写坏的用户 PATH（缺少分号分隔符的条目）
-    Repair-UserPath
-
-    if (-not (Confirm-OverwriteExistingConfig)) {
-        Write-Warn "用户取消覆盖已有配置，脚本已退出。"
-        return
+    # 初始化日志
+    $Script:LogFile = Join-Path $Script:LogsDir ("setup_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".log")
+    New-Item -ItemType Directory -Force -Path $Script:LogsDir | Out-Null
+    Write-Log "========== Claude Code + DeepSeek 安装日志 =========="
+    Write-Log "启动时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    Write-Log "PowerShell 版本：$($PSVersionTable.PSVersion)"
+    Write-Log "安装目录：$($Script:RootDir)"
+    if ([string]::IsNullOrWhiteSpace($Script:Proxy)) {
+        Write-Log "代理：未使用"
+    }
+    else {
+        Write-Log "代理：$($Script:Proxy)"
     }
 
-    Ensure-Node
-    Configure-Npm
-    Ensure-Git
-    Ensure-ClaudeCode
-
-    Show-VersionSummary
-
-    $apiKey = Read-DeepSeekApiKey
-    $modelConfig = Select-DeepSeekModelConfig
-    Set-DeepSeekEnvironment -ApiKey $apiKey -ModelConfig $modelConfig
-
-    # 允许当前用户运行 PowerShell 脚本，否则 claude.ps1 会被拦截
     try {
-        Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
-        Write-Ok "已设置 PowerShell 执行策略为 RemoteSigned（CurrentUser）。"
+        # 清理旧版本可能写坏的用户 PATH（缺少分号分隔符的条目）
+        Repair-UserPath
+
+        if (-not (Confirm-OverwriteExistingConfig)) {
+            Write-Warn "用户取消覆盖已有配置，脚本已退出。"
+            Write-Log "结果：用户取消覆盖配置，脚本退出。"
+            return
+        }
+
+        Ensure-Node
+        Configure-Npm
+        Ensure-Git
+        Ensure-ClaudeCode
+
+        Show-VersionSummary
+
+        $apiKey = Read-DeepSeekApiKey
+        $modelConfig = Select-DeepSeekModelConfig
+        Set-DeepSeekEnvironment -ApiKey $apiKey -ModelConfig $modelConfig
+
+        Write-Log "主模型：$($modelConfig.MainModel)"
+        Write-Log "快速模型：$($modelConfig.FastModel)"
+        Write-Log "Effort：$($modelConfig.Effort)"
+
+        # 允许当前用户运行 PowerShell 脚本，否则 claude.ps1 会被拦截
+        try {
+            Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+            Write-Ok "已设置 PowerShell 执行策略为 RemoteSigned（CurrentUser）。"
+        }
+        catch {
+            Write-Warn "无法设置执行策略，可能需要管理员权限。Claude Code 可用 claude.cmd 启动。"
+        }
+
+        # 确保干净的路径已写入用户级 PATH
+        Sync-ClaudeCodeCLIPath
+
+        Write-Ok "DeepSeek API 已写入当前 Windows 用户级环境变量。"
+        Write-Info "当前主模型：$($modelConfig.MainModel)"
+        Write-Info "当前快速模型：$($modelConfig.FastModel)"
+
+        Write-Log "========== 安装成功 =========="
+        Confirm-LaunchClaude
     }
     catch {
-        Write-Warn "无法设置执行策略，可能需要管理员权限。Claude Code 可用 claude.cmd 启动。"
+        Write-Log "========== 安装失败 =========="
+        Write-Log "失败原因：$($_.Exception.Message)"
+        throw
     }
-
-    # 确保干净的路径已写入用户级 PATH
-    Sync-ClaudeCodeCLIPath
-
-    Write-Ok "DeepSeek API 已写入当前 Windows 用户级环境变量。"
-    Write-Info "当前主模型：$($modelConfig.MainModel)"
-    Write-Info "当前快速模型：$($modelConfig.FastModel)"
-
-    Confirm-LaunchClaude
 }
 
 function Main {

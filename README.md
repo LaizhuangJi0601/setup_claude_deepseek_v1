@@ -22,16 +22,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1
 
 原因：从 GitHub 下载的 `.ps1` 脚本通常没有数字签名，Windows 可能会给文件加上来自 Internet 的安全标记，PowerShell 默认执行策略会拦截未签名脚本并提示“未对文件进行数字签名”。上面的命令只对本次启动的 PowerShell 进程临时绕过执行策略，不需要管理员权限，也不会永久修改系统策略。
 
+如需指定安装目录：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 -InstallDir "E:\ClaudeCodeCLI"
+```
+
 如需使用代理安装：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 -Proxy "http://127.0.0.1:7890"
 ```
 
-如需完全卸载：
+如需完全卸载（指定安装目录时需带上相同参数）：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 -Uninstall
+```
+
+如安装时指定了自定义目录，卸载时需传入相同参数：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 -Uninstall -InstallDir "E:\ClaudeCodeCLI"
 ```
 
 不要以管理员身份运行本脚本；脚本写入的是当前用户级环境变量，管理员窗口会把配置写到 Administrator 账户下。
@@ -40,8 +52,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
+| `-InstallDir` | `string` | 自定义安装根目录，例如 `"E:\ClaudeCodeCLI"`。默认 `D:\ClaudeCodeCLI`（无 D 盘则 `%USERPROFILE%\ClaudeCodeCLI`） |
 | `-Proxy` | `string` | HTTP/HTTPS 代理地址，例如 `"http://127.0.0.1:7890"` |
-| `-Uninstall` | `switch` | 卸载模式，清理脚本写入的所有内容 |
+| `-Uninstall` | `switch` | 卸载模式，清理脚本写入的所有内容。如安装时指定了 `-InstallDir`，卸载时也需要传入相同路径 |
 
 ## 功能详解
 
@@ -49,7 +62,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 
 
 执行脚本后按以下顺序自动完成：
 
-1. **创建本地目录结构** — 若 `D:\` 可用则安装到 `D:\ClaudeCodeCLI\`，否则安装到 `%USERPROFILE%\ClaudeCodeCLI\`
+1. **创建本地目录结构** — 默认安装到 `D:\ClaudeCodeCLI\`（可通过 `-InstallDir` 自定义），若无 D 盘则安装到 `%USERPROFILE%\ClaudeCodeCLI\`
 2. **修复残留 PATH** — 自动检测并修复旧版本脚本可能写坏的 PATH 条目
 3. **检查已有配置** — 若系统已存在 Anthropic 相关环境变量会提示是否覆盖
 4. **安装 Node.js** — 自动从 nodejs.org 获取最新 LTS 版本并安装到本地目录，不污染系统
@@ -80,6 +93,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_claude_deepseek.ps1 
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | 快速模型 |
 | `CLAUDE_CODE_SUBAGENT_MODEL` | 快速模型 |
 | `CLAUDE_CODE_EFFORT_LEVEL` | `max` 或 `medium` |
+
+### 安装日志
+
+脚本会在安装目录下的 `logs\` 子目录生成日志文件，文件名格式为 `setup_yyyyMMdd_HHmmss.log`。
+
+日志记录内容包括：
+- 启动时间、安装目录、代理设置
+- Node.js / npm / Git / Claude Code 的检测或安装结果及版本
+- 写入的环境变量（API Key 已打码）
+- 模型配置选择（主模型、快速模型、Effort）
+- 安装成功或失败原因
 
 ### 卸载流程
 
