@@ -32,3 +32,7 @@ Desktop.ini
 .vscode/
 .idea/
 .claude/
+
+# Local development workspace notes/staging copies
+PROJECT.md
+setup_claude_deepseek/
