@@ -1,6 +1,6 @@
-# setup_claude_deepseek
+# Claude Code Model Kit
 
-Windows x64 上的 **Claude Code CLI 多模型安装与管理工具**。
+Windows x64 上的 **Claude Code 多模型安装与管理工具**。
 
 它会在当前用户环境下安装独立的 Node.js、npm、MinGit 和 Claude Code，并配置 Anthropic-compatible API 提供商。目前支持 DeepSeek、智谱 GLM/Z.AI、Kimi K2.5、Kimi Code/K2.6 和阿里 Qwen/DashScope。
 
@@ -42,7 +42,7 @@ v2.0.0 是一次结构升级：项目从早期单 DeepSeek 脚本升级为模块
 v2.0.0 不是单文件脚本。请下载整个项目目录，并保持以下结构：
 
 ```text
-setup_claude_deepseek/
+claude-code-model-kit/
   setup.ps1
   modules/
     *.ps1
